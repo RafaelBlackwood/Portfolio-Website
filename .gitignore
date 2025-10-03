@@ -1,0 +1,49 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Node and Next.js
+node_modules
+.next
+out
+.nextcache
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# Coverage and tests
+coverage
+*.lcov
+jest-html-reporters-*
+
+# Build outputs
+build
+dist
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Tooling
+.vercel
+.turbo
+.eslintcache
+
+# Local data
+*.local
+
+
