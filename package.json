@@ -4,12 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --configLoader runner",
-    "build": "vite build",
+    "dev": "vite build --configLoader native && vite preview --configLoader native --host 127.0.0.1 --port 5173 --strictPort",
+    "dev:vite": "vite --configLoader native",
+    "build": "vite build --configLoader native",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
-    "preview": "vite preview --configLoader runner"
+    "preview": "vite preview --configLoader native --host 127.0.0.1 --port 5173 --strictPort"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",
