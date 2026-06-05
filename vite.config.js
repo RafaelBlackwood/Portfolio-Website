@@ -5,12 +5,19 @@ import { defineConfig } from 'vite'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+const devOptimizerWorkaround = {
+  disabled: 'dev',
+  noDiscovery: true,
+  include: [],
+};
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
+  ...(command === 'serve' ? { optimizeDeps: devOptimizerWorkaround } : {}),
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
     },
   },
-});
+}));

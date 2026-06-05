@@ -1,5 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { getMonsterPortrait } from '@/lib/portraitAssets';
+import PortraitToken from './PortraitToken';
 
 const MONSTER_THEMES = {
   goblin:   { bg: 'linear-gradient(160deg, #0a1a00 0%, #060e00 50%, #030806 100%)', border: '#40a020', glow: '#40a02044' },
@@ -29,7 +31,13 @@ function HpBar({ current, max }) {
 }
 
 export default function MonsterCard({ monster, hurt, statusBadges }) {
-  const theme = MONSTER_THEMES[monster.id] || MONSTER_THEMES.goblin;
+  const fallbackColor = monster.color || '#8b5cf6';
+  const theme = MONSTER_THEMES[monster.id] || {
+    bg: `linear-gradient(160deg, ${fallbackColor}22 0%, #0e0612 50%, #050307 100%)`,
+    border: fallbackColor,
+    glow: `${fallbackColor}44`,
+  };
+  const portraitSrc = getMonsterPortrait(monster.id);
 
   return (
     <motion.div
@@ -83,23 +91,18 @@ export default function MonsterCard({ monster, hurt, statusBadges }) {
           </motion.div>
         )}
 
-        <motion.div
-          aria-label={monster.name}
-          role="img"
-          className="flex h-28 w-28 items-center justify-center rounded-full border bg-black/25 text-7xl"
+        <PortraitToken
+          src={portraitSrc}
+          alt={monster.name}
+          fallback={monster.emoji}
+          borderColor={theme.border}
+          className="h-28 w-28"
           animate={hurt
             ? { scale: [1, 0.85, 1.1, 1], rotate: [0, -5, 5, 0] }
             : { y: [0, -5, 0] }
           }
           transition={hurt ? { duration: 0.35 } : { repeat: Infinity, duration: 2.8, ease: 'easeInOut' }}
-          style={{
-            borderColor: theme.border + '88',
-            boxShadow: `inset 0 0 28px ${theme.border}22`,
-            filter: `drop-shadow(0 0 14px ${theme.border})`,
-          }}
-        >
-          {monster.emoji}
-        </motion.div>
+        />
       </div>
 
       {/* Stats */}

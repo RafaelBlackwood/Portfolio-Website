@@ -15,6 +15,14 @@ const PANEL_STYLE = {
   background: 'linear-gradient(145deg, #120825, #080412)',
 };
 
+const AUTO_HIT_RESULT = {
+  naturalRoll: null,
+  totalRoll: null,
+  isCrit: false,
+  isMiss: false,
+  result: ATTACK_RESULT.HIT,
+};
+
 function rollDice(count, sides) {
   return Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
 }
@@ -153,18 +161,13 @@ export function PlayerAttackOverlay({ data, onDone }) {
   const [phase, setPhase] = useState(data.needsHit ? 'hit_roll' : 'damage_roll');
   const [hitSettled, setHitSettled] = useState(!data.needsHit);
   const [hitRolls, setHitRolls] = useState([]);
+  const [settledHitResult, setSettledHitResult] = useState(data.needsHit ? null : AUTO_HIT_RESULT);
   const [damageRolls, setDamageRolls] = useState([]);
   const [damageSettled, setDamageSettled] = useState(false);
 
-  const hitResult = useMemo(() => {
+  const previewHitResult = useMemo(() => {
     if (!data.needsHit) {
-      return {
-        naturalRoll: null,
-        totalRoll: null,
-        isCrit: false,
-        isMiss: false,
-        result: ATTACK_RESULT.HIT,
-      };
+      return AUTO_HIT_RESULT;
     }
 
     if (!hitRolls.length) return null;
@@ -175,6 +178,7 @@ export function PlayerAttackOverlay({ data, onDone }) {
       armorClass: data.targetArmorClass,
     });
   }, [data.hitBonus, data.needsHit, data.targetArmorClass, hitRolls]);
+  const hitResult = settledHitResult ?? previewHitResult;
 
   const ui = getResultUi(hitResult?.result ?? ATTACK_RESULT.HIT);
   const ResultIcon = ui.icon;
@@ -188,7 +192,7 @@ export function PlayerAttackOverlay({ data, onDone }) {
 
   const finish = () => {
     onDone({
-      ...hitResult,
+      ...(hitResult ?? AUTO_HIT_RESULT),
       hitRolls,
       damageRolls,
       diceTotal,
@@ -198,8 +202,19 @@ export function PlayerAttackOverlay({ data, onDone }) {
     });
   };
 
+  const recordHitRolls = (rolls) => {
+    const resolved = resolveD20Attack({
+      rolls,
+      bonus: data.hitBonus,
+      armorClass: data.targetArmorClass,
+    });
+
+    setHitRolls(rolls);
+    setSettledHitResult(resolved);
+  };
+
   const skipHitRoll = () => {
-    setHitRolls(rollDice(data.hitDiceCount, 20));
+    recordHitRolls(rollDice(data.hitDiceCount, 20));
     setHitSettled(true);
   };
 
@@ -252,7 +267,7 @@ export function PlayerAttackOverlay({ data, onDone }) {
                   count={data.hitDiceCount}
                   isD20
                   accentColor={ui.color}
-                  onResult={setHitRolls}
+                  onResult={recordHitRolls}
                   onDone={() => setHitSettled(true)}
                 />
               )}

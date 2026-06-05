@@ -24,7 +24,9 @@ import InventoryPanel from '../components/game/InventoryPanel';
 import MerchantScreen from '../components/game/MerchantScreen';
 import PlayerCard from '../components/game/PlayerCard';
 import MonsterCardComponent from '../components/game/MonsterCard';
+import PortraitToken from '../components/game/PortraitToken';
 import TowerMap from '../components/game/TowerMap';
+import { getHeroPortrait } from '../lib/portraitAssets';
 
 const PHASE = { CLASS_SELECT:'class_select', MAP:'map', BATTLE:'battle', MERCHANT:'merchant', GAME_OVER:'game_over', VICTORY:'victory' };
 const TURN  = { PLAYER:'player', ENEMY:'enemy' };
@@ -36,6 +38,9 @@ function getClassSkills(classId) {
 }
 
 function getSkillCooldown(card) {
+  if (typeof card.cooldown === 'number') return card.cooldown;
+  if (card.special === 'draw2') return 2;
+  if (card.special === 'draw') return 1;
   if (card.type === 'defense' || card.type === 'utility') return 0;
   if (card.cost <= 1) return 0;
   return Math.min(3, card.cost);
@@ -208,7 +213,6 @@ export default function Game() {
     setPlayerBlock(0); setEnemyBlock(0); setEnemyPoison(0);
     setPlayerBuff(0); setEnemySlowed(false); setEnemyConfused(false);
     setHand(getClassSkills(playerClass?.id || player?.id));
-    setCooldowns({});
     setPhase(PHASE.BATTLE);
     const first = (finalList.length ? finalList : mList)[0];
     addLog(`⚔️ Floor ${floor} — ${first.name} appears! AC ${first.ac}`, '#e08040');
@@ -431,7 +435,7 @@ export default function Game() {
       setMonsterIdx(nextIdx);
       setEnemyBlock(0); setEnemyPoison(0); setEnemySlowed(false); setEnemyConfused(false);
       addLog(`👾 ${allMonsters[nextIdx].name} appears! AC ${allMonsters[nextIdx].ac}`, '#e08040');
-      if (loot) setPendingLoot(loot);
+      if (loot) setPendingLoot({ ...loot, _afterPhase: PHASE.BATTLE });
     } else {
       // All monsters on this node defeated — return to map
       setGold(newGold);
@@ -677,13 +681,15 @@ export default function Game() {
               {/* Art area */}
               <div className="relative flex items-center justify-center py-8" style={{ minHeight: 140 }}>
                 <div className="absolute inset-0 opacity-15" style={{ background: `radial-gradient(ellipse at 50% 60%, ${cls.color} 0%, transparent 70%)` }} />
-                <motion.div
-                  animate={{ y: [0, -6, 0], filter: ['brightness(1)', 'brightness(1.4)', 'brightness(1)'] }}
+                <PortraitToken
+                  src={getHeroPortrait(cls.id)}
+                  alt={cls.name}
+                  fallback={cls.emoji}
+                  borderColor={cls.color}
+                  className="h-28 w-28"
+                  animate={{ y: [0, -6, 0] }}
                   transition={{ repeat: Infinity, duration: 3 + i * 0.5, ease: 'easeInOut' }}
-                  style={{ fontSize: 88, lineHeight: 1, filter: `drop-shadow(0 0 24px ${cls.color})` }}
-                >
-                  {cls.emoji}
-                </motion.div>
+                />
                 {/* Halo ring for visual richness */}
                 <motion.div
                   animate={{ scale: [0.9, 1.05, 0.9], opacity: [0.3, 0.6, 0.3] }}

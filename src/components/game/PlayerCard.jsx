@@ -1,5 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { getHeroPortrait } from '@/lib/portraitAssets';
+import PortraitToken from './PortraitToken';
 
 // Visual art map per class
 const CLASS_ART = {
@@ -17,6 +19,21 @@ const CLASS_ART = {
     bg: 'linear-gradient(160deg, #001a0a 0%, #000e06 40%, #020806 100%)',
     border: '#208040',
     glow: '#20804055',
+  },
+  paladin: {
+    bg: 'linear-gradient(160deg, #2c2206 0%, #151006 40%, #080704 100%)',
+    border: '#d0a030',
+    glow: '#d0a03055',
+  },
+  ranger: {
+    bg: 'linear-gradient(160deg, #062514 0%, #041408 40%, #020806 100%)',
+    border: '#40a060',
+    glow: '#40a06055',
+  },
+  necromancer: {
+    bg: 'linear-gradient(160deg, #25102c 0%, #120818 40%, #06030a 100%)',
+    border: '#904090',
+    glow: '#90409055',
   },
 };
 
@@ -58,6 +75,7 @@ function ManaOrbs({ current, max }) {
 export default function PlayerCard({ playerClass, player, playerBlock, playerBuff, equipped, stats, hurt, onOpenInventory }) {
   const art = CLASS_ART[playerClass?.id] || CLASS_ART.warrior;
   const equippedItems = Object.values(equipped || {}).filter(Boolean);
+  const portraitSrc = getHeroPortrait(playerClass?.id);
 
   return (
     <motion.div
@@ -96,20 +114,15 @@ export default function PlayerCard({ playerClass, player, playerBlock, playerBuf
         <div className="absolute inset-0 opacity-20" style={{
           background: `radial-gradient(ellipse at 50% 50%, ${art.border} 0%, transparent 70%)`
         }} />
-        <motion.div
-          aria-label={playerClass?.name}
-          role="img"
-          className="flex h-28 w-28 items-center justify-center rounded-full border bg-black/25 text-7xl"
+        <PortraitToken
+          src={portraitSrc}
+          alt={playerClass?.name || 'Hero'}
+          fallback={playerClass?.emoji}
+          borderColor={art.border}
+          className="h-28 w-28"
           animate={{ y: [0, -4, 0] }}
           transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
-          style={{
-            borderColor: art.border + '88',
-            boxShadow: `inset 0 0 28px ${art.border}22`,
-            filter: `drop-shadow(0 0 14px ${art.border})`,
-          }}
-        >
-          {playerClass?.emoji}
-        </motion.div>
+        />
         {/* Hurt flash */}
         {hurt && (
           <div className="absolute inset-0 bg-red-500/30 pointer-events-none" />
