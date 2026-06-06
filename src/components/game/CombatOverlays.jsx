@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, Dice5, Shield, Skull, Swords, X, Zap } from 'lucide-react';
 import {
@@ -6,8 +6,10 @@ import {
   formatDiceRolls,
   getDamageDiceCount,
   getMonsterDamageDiceCount,
+  isAttackMiss,
+  resolveDamage,
   resolveD20Attack,
-  sumDice,
+  rollDice,
 } from '@/lib/combatRules';
 import PhysicsDiceRoller from './PhysicsDiceRoller';
 
@@ -22,10 +24,6 @@ const AUTO_HIT_RESULT = {
   isMiss: false,
   result: ATTACK_RESULT.HIT,
 };
-
-function rollDice(count, sides) {
-  return Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
-}
 
 function getResultUi(result, attacker = 'player') {
   if (result === ATTACK_RESULT.CRIT) {
@@ -158,44 +156,42 @@ function CombatButton({ children, onClick, tone = 'damage' }) {
 }
 
 export function PlayerAttackOverlay({ data, onDone }) {
+  const hasFinishedRef = useRef(false);
   const [phase, setPhase] = useState(data.needsHit ? 'hit_roll' : 'damage_roll');
   const [hitSettled, setHitSettled] = useState(!data.needsHit);
-  const [hitRolls, setHitRolls] = useState([]);
-  const [settledHitResult, setSettledHitResult] = useState(data.needsHit ? null : AUTO_HIT_RESULT);
+  const [hitRolls, setHitRolls] = useState(() => []);
+  const [hitOutcome, setHitOutcome] = useState(() => (
+    data.needsHit ? null : { ...AUTO_HIT_RESULT, hitRolls: [] }
+  ));
+  const hitOutcomeRef = useRef(hitOutcome);
   const [damageRolls, setDamageRolls] = useState([]);
   const [damageSettled, setDamageSettled] = useState(false);
 
-  const previewHitResult = useMemo(() => {
-    if (!data.needsHit) {
-      return AUTO_HIT_RESULT;
-    }
-
-    if (!hitRolls.length) return null;
-
-    return resolveD20Attack({
-      rolls: hitRolls,
-      bonus: data.hitBonus,
-      armorClass: data.targetArmorClass,
-    });
-  }, [data.hitBonus, data.needsHit, data.targetArmorClass, hitRolls]);
-  const hitResult = settledHitResult ?? previewHitResult;
+  const hitResult = hitOutcome;
 
   const ui = getResultUi(hitResult?.result ?? ATTACK_RESULT.HIT);
   const ResultIcon = ui.icon;
   const damageDiceCount = hitResult
     ? getDamageDiceCount(data.cardValue, hitResult.isCrit)
     : getDamageDiceCount(data.cardValue, false);
-  const diceTotal = sumDice(damageRolls);
-  const rawAttack = diceTotal + data.damageModifier;
-  const blockedByTarget = Math.min(data.blockedByTarget, rawAttack);
-  const finalDamage = Math.max(0, rawAttack - blockedByTarget);
+  const damageResolution = useMemo(() => resolveDamage({
+    rolls: damageRolls,
+    modifier: data.damageModifier,
+    block: data.blockedByTarget,
+    isMiss: isAttackMiss(hitResult),
+  }), [damageRolls, data.blockedByTarget, data.damageModifier, hitResult]);
+  const { diceTotal, rawDamage, blocked: blockedByTarget, finalDamage } = damageResolution;
 
   const finish = () => {
+    const lockedHit = hitOutcomeRef.current ?? hitResult;
+    if (hasFinishedRef.current || !lockedHit || (!isAttackMiss(lockedHit) && !damageSettled)) return;
+    hasFinishedRef.current = true;
     onDone({
-      ...(hitResult ?? AUTO_HIT_RESULT),
-      hitRolls,
+      ...lockedHit,
+      hitRolls: lockedHit.hitRolls ?? hitRolls,
       damageRolls,
       diceTotal,
+      rawDamage,
       finalDamage,
       damageModifier: data.damageModifier,
       blocked: blockedByTarget,
@@ -203,22 +199,40 @@ export function PlayerAttackOverlay({ data, onDone }) {
   };
 
   const recordHitRolls = (rolls) => {
+    if (hitOutcomeRef.current) return;
+
+    const lockedRolls = [...rolls];
     const resolved = resolveD20Attack({
-      rolls,
+      rolls: lockedRolls,
       bonus: data.hitBonus,
       armorClass: data.targetArmorClass,
     });
+    const lockedOutcome = {
+      ...resolved,
+      hitRolls: lockedRolls,
+    };
 
-    setHitRolls(rolls);
-    setSettledHitResult(resolved);
+    hitOutcomeRef.current = lockedOutcome;
+    setHitRolls(lockedRolls);
+    setHitOutcome(lockedOutcome);
   };
 
   const skipHitRoll = () => {
+    if (hitSettled || hitOutcomeRef.current) return;
     recordHitRolls(rollDice(data.hitDiceCount, 20));
     setHitSettled(true);
   };
 
+  const startDamageRoll = () => {
+    const lockedHit = hitOutcomeRef.current ?? hitResult;
+    if (!lockedHit || isAttackMiss(lockedHit) || phase !== 'hit_roll') return;
+    setDamageRolls([]);
+    setDamageSettled(false);
+    setPhase('damage_roll');
+  };
+
   const skipDamageRoll = () => {
+    if (damageSettled) return;
     setDamageRolls(rollDice(damageDiceCount, 6));
     setDamageSettled(true);
   };
@@ -287,10 +301,10 @@ export function PlayerAttackOverlay({ data, onDone }) {
                     <ResultIcon className="h-8 w-8" />
                     <span>{ui.label}</span>
                   </div>
-                  {hitResult.isMiss ? (
+                  {isAttackMiss(hitResult) ? (
                     <CombatButton tone="neutral" onClick={finish}>Continue</CombatButton>
                   ) : (
-                    <CombatButton onClick={() => setPhase('damage_roll')}>
+                    <CombatButton onClick={startDamageRoll}>
                       <Dice5 className="h-4 w-4" />
                       Roll damage
                     </CombatButton>
@@ -381,20 +395,21 @@ export function EnemyAttackOverlay({ data, onDone }) {
         armorClass: data.playerAC,
       });
       const damageDiceCount = getMonsterDamageDiceCount(data.monster.attack, hitResult.isCrit);
-      const damageRolls = hitResult.isMiss ? [] : rollDice(damageDiceCount, 6);
-      const diceTotal = sumDice(damageRolls);
+      const attackMissed = isAttackMiss(hitResult);
+      const damageRolls = attackMissed ? [] : rollDice(damageDiceCount, 6);
       const slowedPenalty = data.enemySlowed ? 2 : 0;
-      const rawAttack = hitResult.isMiss ? 0 : Math.max(0, diceTotal - slowedPenalty);
-      const blocked = Math.min(data.playerBlock, rawAttack);
-      const finalDamage = Math.max(0, rawAttack - blocked);
+      const damageResolution = resolveDamage({
+        rolls: damageRolls,
+        modifier: -slowedPenalty,
+        block: data.playerBlock,
+        isMiss: attackMissed,
+      });
 
       setResolved({
         ...hitResult,
         hitRolls,
         damageRolls,
-        diceTotal,
-        finalDamage,
-        blocked,
+        ...damageResolution,
         slowedPenalty,
       });
     }, 700);

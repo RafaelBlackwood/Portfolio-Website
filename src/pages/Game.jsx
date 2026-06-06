@@ -8,9 +8,10 @@ import {
   ALL_CARDS, rollDie, getMonsterDeck, rollLoot, getEquipmentBonuses, getSellValue, rollTreasure
 } from '../lib/gameData';
 import {
-  ATTACK_RESULT,
   formatDiceRolls,
-  sumDice,
+  isAttackCrit,
+  isAttackMiss,
+  resolveDamage,
 } from '../lib/combatRules';
 import {
   createDoomTowerFloor,
@@ -373,17 +374,22 @@ export default function Game() {
       hitBonus,
     } = r;
 
-    const isMiss = rollResult.result === ATTACK_RESULT.MISS;
-    const isCrit = rollResult.result === ATTACK_RESULT.CRIT;
-    const diceTotal = rollResult.diceTotal || sumDice(rollResult.damageRolls);
-    const damageModifier = eqBonuses.attack + usedPlayerBuff;
-    const rawAttack = diceTotal + damageModifier;
-    const blockUsed = card.id === 'shadowstep' ? 0 : Math.min(previousEnemyBlock, rawAttack);
-    const finalDamage = isMiss ? 0 : Math.max(0, rawAttack - blockUsed);
+    const isMiss = isAttackMiss(rollResult);
+    const isCrit = isAttackCrit(rollResult);
+    const damageModifier = rollResult.damageModifier ?? eqBonuses.attack + usedPlayerBuff;
+    const fallbackDamage = resolveDamage({
+      rolls: rollResult.damageRolls,
+      modifier: damageModifier,
+      block: card.id === 'shadowstep' ? 0 : previousEnemyBlock,
+      isMiss,
+    });
+    const diceTotal = rollResult.diceTotal ?? fallbackDamage.diceTotal;
+    const blockUsed = card.id === 'shadowstep' ? 0 : (rollResult.blocked ?? fallbackDamage.blocked);
+    const finalDamage = isMiss ? 0 : (rollResult.finalDamage ?? fallbackDamage.finalDamage);
     const newMon = { ...monster, hp: Math.max(0, monster.hp - finalDamage) };
     const newMonsters = [...monstersSnapshot];
     let resolvedPlayer = { ...newPlayer };
-    let nextEnemyBlock = card.id === 'shadowstep' ? previousEnemyBlock : Math.max(0, previousEnemyBlock - rawAttack);
+    let nextEnemyBlock = card.id === 'shadowstep' ? previousEnemyBlock : Math.max(0, previousEnemyBlock - blockUsed);
     let nextEnemySlowed = previousEnemySlowed;
     let nextEnemyConfused = previousEnemyConfused;
 
@@ -523,14 +529,14 @@ export default function Game() {
     const restoredPlayer = { ...player, mana: player.maxMana + getEquipmentBonuses(equipped).maxMana };
     setCooldowns(prev => reduceCooldowns(prev));
     setPlayer(restoredPlayer);
-    setPlayerBlock(0); setPlayerBuff(0);
+    setPlayerBuff(0);
     setTurn(TURN.ENEMY);
     setTimeout(() => doEnemyTurn(restoredPlayer), 500);
   }
 
   function doEnemyTurn(currentPlayer) {
     const monster = monsters[monsterIdx];
-    if (!monster || monster.hp <= 0) { setTurn(TURN.PLAYER); return; }
+    if (!monster || monster.hp <= 0) { setPlayerBlock(0); setTurn(TURN.PLAYER); return; }
 
     let newPlayer   = { ...currentPlayer };
     let newMon      = { ...monster };
@@ -546,6 +552,7 @@ export default function Game() {
         newMonsters[monsterIdx] = newMon;
         setMonsters(newMonsters); setEnemyPoison(newEnemyPoison);
         handleMonsterDeath(newMon, newMonsters, newPlayer);
+        setPlayerBlock(0);
         setTurn(TURN.PLAYER); return;
       }
     }
@@ -561,6 +568,7 @@ export default function Game() {
 
     if (enemyConfused) {
       addLog(`😵 ${monster.name} is stunned and loses its turn!`, '#ffd700');
+      setPlayerBlock(0);
       setEnemyConfused(false); setEnemySlowed(false);
       setTurn(TURN.PLAYER); return;
     }
@@ -582,6 +590,7 @@ export default function Game() {
       newMonsters,
       playerAC,
       enemySlowed,
+      playerBlock,
     });
   }
 
@@ -591,13 +600,17 @@ export default function Game() {
     setEnemyAttackOverlay(null);
     setPendingEnemyResult(null);
 
-    const { newPlayer, newMon, newMonsters, enemySlowed: wasEnemySlowed } = r;
-    const isMiss = rollResult.result === ATTACK_RESULT.MISS;
-    const diceTotal = rollResult.diceTotal || sumDice(rollResult.damageRolls);
-    const slowedPenalty = wasEnemySlowed ? 2 : 0;
-    const rawAttack = isMiss ? 0 : Math.max(0, diceTotal - slowedPenalty);
-    const blocked = Math.min(playerBlock, rawAttack);
-    const dmg = Math.max(0, rawAttack - playerBlock);
+    const { newPlayer, newMon, newMonsters, enemySlowed: wasEnemySlowed, playerBlock: activePlayerBlock = 0 } = r;
+    const isMiss = isAttackMiss(rollResult);
+    const slowedPenalty = rollResult.slowedPenalty ?? (wasEnemySlowed ? 2 : 0);
+    const fallbackDamage = resolveDamage({
+      rolls: rollResult.damageRolls,
+      modifier: -slowedPenalty,
+      block: activePlayerBlock,
+      isMiss,
+    });
+    const blocked = rollResult.blocked ?? fallbackDamage.blocked;
+    const dmg = isMiss ? 0 : (rollResult.finalDamage ?? fallbackDamage.finalDamage);
     const resolvedPlayer = { ...newPlayer, hp: Math.max(0, newPlayer.hp - dmg) };
     const resolvedMonster = { ...newMon };
     const hits = !isMiss;
@@ -614,6 +627,7 @@ export default function Game() {
 
     newMonsters[monsterIdx] = resolvedMonster;
     setMonsters(newMonsters);
+    setPlayerBlock(0);
     setEnemyConfused(false); setEnemySlowed(false);
     if (hits && dmg > 0) { setPlayerHurt(true); setTimeout(() => setPlayerHurt(false), 400); }
     if (resolvedPlayer.hp <= 0) {

@@ -249,7 +249,8 @@ const D6_FACE_NORMALS = [
   new THREE.Vector3( 0,  0,  1),
   new THREE.Vector3( 0,  0, -1),
 ];
-const D6_FACE_VALUES = [2, 5, 1, 6, 3, 4];
+// BoxGeometry applies the D6 materials in this same face-normal order.
+const D6_FACE_VALUES = [1, 2, 3, 4, 5, 6];
 
 function getTopFaceD6(quaternion) {
   const up = new THREE.Vector3(0, 1, 0);
@@ -446,9 +447,10 @@ export default function PhysicsDiceRoller({ count = 1, isD20 = false, onResult, 
           });
           onResultRef.current?.(results);
 
-          setTimeout(() => {
+          const doneTimer = window.setTimeout(() => {
             if (!doneFired) { doneFired = true; onDoneRef.current?.(); }
           }, 900);
+          if (sceneRef.current) sceneRef.current.doneTimer = doneTimer;
         }
       }
 
@@ -464,6 +466,9 @@ export default function PhysicsDiceRoller({ count = 1, isD20 = false, onResult, 
     return () => {
       if (sceneRef.current) {
         cancelAnimationFrame(sceneRef.current.raf);
+        if (sceneRef.current.doneTimer) {
+          window.clearTimeout(sceneRef.current.doneTimer);
+        }
         sceneRef.current.renderer.dispose();
         if (sceneRef.current.canvas?.parentNode) {
           sceneRef.current.canvas.parentNode.removeChild(sceneRef.current.canvas);
