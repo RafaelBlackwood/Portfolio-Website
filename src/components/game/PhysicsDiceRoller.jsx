@@ -1,6 +1,54 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+
+function safeRoundRect(ctx, x, y, width, height, radius) {
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, width, height, radius);
+    return;
+  }
+
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+}
+
+function randomDiceResults(count, sides) {
+  return Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
+}
+
+function FallbackDiceRoller({ rolls, isD20, accentColor }) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-black/20 px-4 text-center">
+      <div className="text-[10px] uppercase tracking-[0.28em] text-stone-500">Dice settled</div>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        {rolls.map((roll, index) => (
+          <div
+            key={`${roll}-${index}`}
+            className="flex h-14 w-14 items-center justify-center rounded-xl border text-2xl font-black shadow-lg"
+            style={{
+              borderColor: `${accentColor}aa`,
+              color: accentColor,
+              background: 'linear-gradient(145deg, rgba(20,8,35,0.95), rgba(8,4,18,0.95))',
+              boxShadow: `0 0 18px ${accentColor}55`,
+              fontFamily: "'Cinzel', serif",
+            }}
+          >
+            {roll}
+          </div>
+        ))}
+      </div>
+      <div className="text-[10px] uppercase tracking-wider text-stone-600">{isD20 ? 'D20' : 'D6'} fallback roll</div>
+    </div>
+  );
+}
 
 // ─── D6 Face Texture ──────────────────────────────────────────────────────────
 function makeDiceTexture(value, size = 256) {
@@ -13,20 +61,23 @@ function makeDiceTexture(value, size = 256) {
   grad.addColorStop(0, '#1a0830');
   grad.addColorStop(0.5, '#0a0418');
   grad.addColorStop(1, '#060210');
+  ctx.beginPath();
   ctx.fillStyle = grad;
-  ctx.roundRect(4, 4, size - 8, size - 8, size * 0.1);
+  safeRoundRect(ctx, 4, 4, size - 8, size - 8, size * 0.1);
   ctx.fill();
 
   // Border glow
+  ctx.beginPath();
   ctx.strokeStyle = '#9070e0';
   ctx.lineWidth = 6;
-  ctx.roundRect(4, 4, size - 8, size - 8, size * 0.1);
+  safeRoundRect(ctx, 4, 4, size - 8, size - 8, size * 0.1);
   ctx.stroke();
 
   // Inner highlight
+  ctx.beginPath();
   ctx.strokeStyle = 'rgba(180,150,255,0.3)';
   ctx.lineWidth = 2;
-  ctx.roundRect(12, 12, size - 24, size - 24, size * 0.08);
+  safeRoundRect(ctx, 12, 12, size - 24, size - 24, size * 0.08);
   ctx.stroke();
 
   const dotR = size * 0.085;
@@ -269,11 +320,49 @@ export default function PhysicsDiceRoller({ count = 1, isD20 = false, onResult, 
   const sceneRef = useRef(null);
   const onResultRef = useRef(onResult);
   const onDoneRef = useRef(onDone);
+  const fallbackTimerRef = useRef(null);
+  const [fallbackRolls, setFallbackRolls] = useState(null);
 
   onResultRef.current = onResult;
   onDoneRef.current = onDone;
 
+  const disposeScene = useCallback(() => {
+    const current = sceneRef.current;
+    if (!current) return;
+
+    cancelAnimationFrame(current.raf);
+    if (current.doneTimer) {
+      window.clearTimeout(current.doneTimer);
+    }
+    current.renderer?.dispose?.();
+    if (current.canvas?.parentNode) {
+      current.canvas.parentNode.removeChild(current.canvas);
+    }
+    sceneRef.current = null;
+  }, []);
+
+  const finishWithFallback = useCallback((error) => {
+    if (error) {
+      console.error('3D dice renderer failed, using fallback dice.', error);
+    }
+
+    disposeScene();
+    if (fallbackTimerRef.current) {
+      window.clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+
+    const rolls = randomDiceResults(Math.max(1, count), isD20 ? 20 : 6);
+    setFallbackRolls(rolls);
+    onResultRef.current?.(rolls);
+    fallbackTimerRef.current = window.setTimeout(() => {
+      fallbackTimerRef.current = null;
+      onDoneRef.current?.();
+    }, 450);
+  }, [count, disposeScene, isD20]);
+
   const run = useCallback(() => {
+    try {
     const el = mountRef.current;
     if (!el) return;
     el.textContent = '';
@@ -286,6 +375,7 @@ export default function PhysicsDiceRoller({ count = 1, isD20 = false, onResult, 
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     el.appendChild(renderer.domElement);
+    sceneRef.current = { renderer, raf: null, canvas: renderer.domElement };
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 200);
@@ -411,72 +501,93 @@ export default function PhysicsDiceRoller({ count = 1, isD20 = false, onResult, 
     let totalTime = 0;
 
     const tick = (now) => {
-      raf = requestAnimationFrame(tick);
-      const dt = Math.min((now - lastTime) / 1000, 0.05);
-      lastTime = now;
-      totalTime += dt;
-
-      world.step(fixedStep, dt, 4);
-
-      dice.forEach(({ mesh, body }) => {
-        mesh.position.copy(body.position);
-        mesh.quaternion.copy(body.quaternion);
-      });
-
-      if (!resultFired && totalTime > 1.5) {
-        const allSleeping = dice.every(d =>
-          d.body.sleepState === CANNON.Body.SLEEPING ||
-          (d.body.velocity.length() < 0.3 && d.body.angularVelocity.length() < 0.3)
-        );
-        if (allSleeping || totalTime > 5) {
-          resultFired = true;
-
-          // Freeze all dice in place
-          dice.forEach(d => {
-            d.body.velocity.set(0, 0, 0);
-            d.body.angularVelocity.set(0, 0, 0);
-            d.body.type = CANNON.Body.STATIC;
-          });
-
-          const results = dice.map(({ mesh }) => {
-            const q = new THREE.Quaternion(
-              mesh.quaternion.x, mesh.quaternion.y,
-              mesh.quaternion.z, mesh.quaternion.w
-            );
-            return isD20 ? getTopFaceD20(q) : getTopFaceD6(q);
-          });
-          onResultRef.current?.(results);
-
-          const doneTimer = window.setTimeout(() => {
-            if (!doneFired) { doneFired = true; onDoneRef.current?.(); }
-          }, 900);
-          if (sceneRef.current) sceneRef.current.doneTimer = doneTimer;
+      try {
+        raf = requestAnimationFrame(tick);
+        if (sceneRef.current) {
+          sceneRef.current.raf = raf;
         }
-      }
+        const dt = Math.min((now - lastTime) / 1000, 0.05);
+        lastTime = now;
+        totalTime += dt;
 
-      renderer.render(scene, camera);
+        world.step(fixedStep, dt, 4);
+
+        dice.forEach(({ mesh, body }) => {
+          mesh.position.copy(body.position);
+          mesh.quaternion.copy(body.quaternion);
+        });
+
+        if (!resultFired && totalTime > 1.5) {
+          const allSleeping = dice.every(d =>
+            d.body.sleepState === CANNON.Body.SLEEPING ||
+            (d.body.velocity.length() < 0.3 && d.body.angularVelocity.length() < 0.3)
+          );
+          if (allSleeping || totalTime > 5) {
+            resultFired = true;
+
+            // Freeze all dice in place
+            dice.forEach(d => {
+              d.body.velocity.set(0, 0, 0);
+              d.body.angularVelocity.set(0, 0, 0);
+              d.body.type = CANNON.Body.STATIC;
+            });
+
+            const results = dice.map(({ mesh }) => {
+              const q = new THREE.Quaternion(
+                mesh.quaternion.x, mesh.quaternion.y,
+                mesh.quaternion.z, mesh.quaternion.w
+              );
+              return isD20 ? getTopFaceD20(q) : getTopFaceD6(q);
+            });
+            onResultRef.current?.(results);
+
+            const doneTimer = window.setTimeout(() => {
+              if (!doneFired) { doneFired = true; onDoneRef.current?.(); }
+            }, 900);
+            if (sceneRef.current) sceneRef.current.doneTimer = doneTimer;
+          }
+        }
+
+        renderer.render(scene, camera);
+      } catch (error) {
+        if (!resultFired) {
+          resultFired = true;
+          finishWithFallback(error);
+          return;
+        }
+        disposeScene();
+        console.error('3D dice renderer failed after settling.', error);
+      }
     };
 
     raf = requestAnimationFrame(tick);
     sceneRef.current = { renderer, raf, canvas: renderer.domElement };
-  }, [count, isD20]);
+    } catch (error) {
+      finishWithFallback(error);
+    }
+  }, [count, finishWithFallback, isD20]);
 
   useEffect(() => {
+    setFallbackRolls(null);
     run();
     return () => {
-      if (sceneRef.current) {
-        cancelAnimationFrame(sceneRef.current.raf);
-        if (sceneRef.current.doneTimer) {
-          window.clearTimeout(sceneRef.current.doneTimer);
-        }
-        sceneRef.current.renderer.dispose();
-        if (sceneRef.current.canvas?.parentNode) {
-          sceneRef.current.canvas.parentNode.removeChild(sceneRef.current.canvas);
-        }
-        sceneRef.current = null;
+      disposeScene();
+      if (fallbackTimerRef.current) {
+        window.clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
       }
     };
-  }, [run]);
+  }, [disposeScene, run]);
 
-  return <div ref={mountRef} style={{ width: '100%', height: '100%', background: 'transparent', color: accentColor }} />;
+  return (
+    <div ref={mountRef} style={{ width: '100%', height: '100%', background: 'transparent', color: accentColor }}>
+      {fallbackRolls && (
+        <FallbackDiceRoller
+          rolls={fallbackRolls}
+          isD20={isD20}
+          accentColor={accentColor}
+        />
+      )}
+    </div>
+  );
 }

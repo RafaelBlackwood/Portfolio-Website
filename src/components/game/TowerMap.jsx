@@ -73,10 +73,44 @@ function getVisibleCellConfig(cell, isRevealed) {
   return EVENT_CONFIG[cell.event] ?? EVENT_CONFIG.hidden;
 }
 
+function MiniTreasureChest({ active = false }) {
+  return (
+    <motion.div
+      className="relative h-7 w-8"
+      style={{ perspective: 160 }}
+      animate={active ? { y: [0, -2, 0] } : {}}
+      transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
+    >
+      <div
+        className="absolute left-1 right-1 top-1 h-3 rounded-t-lg border"
+        style={{
+          transform: 'rotateX(-18deg)',
+          transformOrigin: 'bottom center',
+          background: 'linear-gradient(160deg, #a16207, #3f1607)',
+          borderColor: '#fbbf24',
+          boxShadow: active ? '0 0 14px rgba(251,191,36,0.7)' : '0 0 8px rgba(251,191,36,0.35)',
+        }}
+      />
+      <div
+        className="absolute bottom-0 left-0 right-0 h-5 rounded border"
+        style={{
+          background: 'linear-gradient(160deg, #b45309, #451a03)',
+          borderColor: '#fbbf24',
+          boxShadow: 'inset 0 -5px 8px rgba(0,0,0,0.35)',
+        }}
+      >
+        <div className="absolute left-1/2 top-1 h-3 w-2 -translate-x-1/2 rounded-sm bg-amber-300" />
+        <div className="absolute left-1 top-2 h-1 w-6 rounded bg-amber-200/50" />
+      </div>
+    </motion.div>
+  );
+}
+
 function TowerCell({ cell, isCurrent, isReachable, isVisited, isRevealed, onSelect }) {
   const config = getVisibleCellConfig(cell, isRevealed);
   const Icon = config.icon;
   const canEnter = isReachable && !isCurrent;
+  const showTreasureChest = isRevealed && cell.event === TOWER_CELL_EVENT.TREASURE;
   const helperText = isCurrent
     ? 'Current position'
     : isVisited
@@ -106,7 +140,11 @@ function TowerCell({ cell, isCurrent, isReachable, isVisited, isRevealed, onSele
     >
       <div className="flex h-full flex-col justify-between">
         <div className="flex items-start justify-between gap-2">
-          <Icon className="h-5 w-5" style={{ color: config.color }} />
+          {showTreasureChest ? (
+            <MiniTreasureChest active={isCurrent || canEnter} />
+          ) : (
+            <Icon className="h-5 w-5" style={{ color: config.color }} />
+          )}
           {isVisited && !isCurrent && <span className="rounded bg-stone-700/40 px-1.5 py-0.5 text-[9px] text-stone-400">Seen</span>}
         </div>
         <div>

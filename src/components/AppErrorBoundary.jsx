@@ -14,6 +14,30 @@ export default class AppErrorBoundary extends React.Component {
     console.error('App render failed', error, errorInfo);
   }
 
+  componentDidMount() {
+    window.addEventListener('error', this.handleGlobalError);
+    window.addEventListener('unhandledrejection', this.handleUnhandledRejection);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('error', this.handleGlobalError);
+    window.removeEventListener('unhandledrejection', this.handleUnhandledRejection);
+  }
+
+  handleGlobalError = (event) => {
+    const error = event.error || new Error(event.message || 'Unexpected browser error');
+    console.error('App browser error', error);
+    this.setState({ error });
+  };
+
+  handleUnhandledRejection = (event) => {
+    const reason = event.reason instanceof Error
+      ? event.reason
+      : new Error(String(event.reason || 'Unhandled promise rejection'));
+    console.error('App promise failed', reason);
+    this.setState({ error: reason });
+  };
+
   render() {
     const { error } = this.state;
 

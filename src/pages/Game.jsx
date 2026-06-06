@@ -27,6 +27,7 @@ import PlayerCard from '../components/game/PlayerCard';
 import MonsterCardComponent from '../components/game/MonsterCard';
 import PortraitToken from '../components/game/PortraitToken';
 import TowerMap from '../components/game/TowerMap';
+import TreasureChestOverlay from '../components/game/TreasureChestOverlay';
 import { getHeroPortrait } from '../lib/portraitAssets';
 
 const PHASE = { CLASS_SELECT:'class_select', MAP:'map', BATTLE:'battle', MERCHANT:'merchant', GAME_OVER:'game_over', VICTORY:'victory' };
@@ -150,6 +151,7 @@ export default function Game() {
   const [playerHurt, setPlayerHurt]     = useState(false);
   const [enemyHurt, setEnemyHurt]       = useState(false);
   const [pendingLoot, setPendingLoot]   = useState(null);
+  const [pendingTreasure, setPendingTreasure] = useState(null);
   const [showInventory, setShowInventory] = useState(false);
   const [animMsg, setAnimMsg]           = useState(null);
   // Combat overlays
@@ -197,6 +199,12 @@ export default function Game() {
     setTowerState(createDoomTowerFloor(1));
     setEquipped({ weapon: null, armor: null, accessory: null });
     setInventory([]);
+    setPendingLoot(null);
+    setPendingTreasure(null);
+    setPlayerAttackOverlay(null);
+    setEnemyAttackOverlay(null);
+    setPendingAttackResult(null);
+    setPendingEnemyResult(null);
     setPhase(PHASE.MAP);
   }
 
@@ -221,21 +229,48 @@ export default function Game() {
 
   function handleTreasure() {
     const treasure = rollTreasure(floor);
+    setPendingTreasure({ id: Date.now() + Math.random(), reward: treasure });
+    setPhase(PHASE.MAP);
+  }
+
+  function collectTreasureReward() {
+    const treasure = pendingTreasure?.reward;
+    setPendingTreasure(null);
+
+    if (!treasure) {
+      setPhase(PHASE.MAP);
+      return;
+    }
+
     if (treasure.type === 'gold') {
       setGold(g => g + treasure.value);
-      addLog(`💰 Treasure! Found ${treasure.value} gold!`, '#ffd700');
-      showMsg(`+${treasure.value} 🪙`, '#ffd700');
+      addLog(`Treasure: found ${treasure.value} gold.`, '#ffd700');
+      showMsg(`+${treasure.value} gold`, '#ffd700');
       setPhase(PHASE.MAP);
-    } else if (treasure.type === 'heal') {
-      setPlayer(p => ({ ...p, hp: Math.min(p.maxHp + getEquipmentBonuses(equippedRef.current).maxHp, p.hp + treasure.value) }));
-      addLog(`💚 Treasure! Healed ${treasure.value} HP!`, '#40ff80');
-      showMsg(`+${treasure.value} ❤️`, '#40ff80');
-      setPhase(PHASE.MAP);
-    } else if (treasure.type === 'item' && treasure.item) {
-      setPendingLoot({ ...treasure.item, _afterPhase: PHASE.MAP });
-    } else {
-      setPhase(PHASE.MAP);
+      return;
     }
+
+    if (treasure.type === 'heal') {
+      setPlayer(p => ({
+        ...p,
+        hp: Math.min(
+          p.maxHp + getEquipmentBonuses(equippedRef.current).maxHp,
+          p.hp + treasure.value
+        ),
+      }));
+      addLog(`Treasure: restored ${treasure.value} HP.`, '#40ff80');
+      showMsg(`+${treasure.value} HP`, '#40ff80');
+      setPhase(PHASE.MAP);
+      return;
+    }
+
+    if (treasure.type === 'item' && treasure.item) {
+      setInventory(inv => [...inv, { ...treasure.item }]);
+      addLog(`Treasure: found ${treasure.item.name}.`, RARITY_COLORS[treasure.item.rarity] || '#ffd700');
+      showMsg(`+ ${treasure.item.name}`, RARITY_COLORS[treasure.item.rarity] || '#ffd700');
+    }
+
+    setPhase(PHASE.MAP);
   }
 
   function playCard(cardIdx) {
@@ -863,7 +898,16 @@ export default function Game() {
         inventoryCount={inventory.length}
         onAbandon={() => setPhase(PHASE.CLASS_SELECT)}
       />
-      {/* Loot screen from treasure chests */}
+      <AnimatePresence>
+        {pendingTreasure && (
+          <TreasureChestOverlay
+            key={pendingTreasure.id}
+            treasure={pendingTreasure.reward}
+            onCollect={collectTreasureReward}
+          />
+        )}
+      </AnimatePresence>
+      {/* Loot screen from defeated enemies */}
       <AnimatePresence>{pendingLoot && <LootScreen lootItem={pendingLoot} onTake={takeLoot} onSkip={skipLoot} />}</AnimatePresence>
       {inventoryPanel}
       {CinzelFont}
