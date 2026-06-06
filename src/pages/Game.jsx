@@ -642,6 +642,24 @@ export default function Game() {
   const currentMonster = monsters[monsterIdx];
   const stats = player ? getPlayerStats(player) : null;
 
+  if (phase !== PHASE.CLASS_SELECT && !player) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#08070b] px-4 text-stone-300">
+        <div className="max-w-sm rounded-xl border border-stone-800 bg-black/50 p-6 text-center">
+          <div className="text-xs uppercase tracking-[0.28em] text-amber-300">Run not ready</div>
+          <p className="mt-3 text-sm text-stone-500">Choose a character to start a new Doom Tower run.</p>
+          <button
+            type="button"
+            onClick={() => setPhase(PHASE.CLASS_SELECT)}
+            className="mt-5 rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-black transition-colors hover:bg-amber-400"
+          >
+            Choose Character
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Inventory panel — available in ALL phases when player exists ─────────
   const inventoryPanel = player && (
     <InventoryPanel
